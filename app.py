@@ -7,6 +7,9 @@ import datetime
 app = Flask(__name__)
 app.secret_key = "secret_key_for_flash"
 
+# 管理用共通パスワード（スレやクラスを消す時に使えます。初期値: admin123）
+ADMIN_PASS = "admin123"
+
 def get_db():
     url = os.environ.get('DATABASE_URL')
     if url and url.startswith("postgresql://"):
@@ -15,14 +18,19 @@ def get_db():
 
 def init_db():
     conn = get_db(); cur = conn.cursor()
+    # テーブル作成（カラム不足によるエラーを防止）
     cur.execute("CREATE TABLE IF NOT EXISTS classes (id INT PRIMARY KEY, name TEXT)")
     cur.execute("CREATE TABLE IF NOT EXISTS threads (id SERIAL PRIMARY KEY, cid INT, title TEXT)")
     cur.execute("CREATE TABLE IF NOT EXISTS posts (id SERIAL PRIMARY KEY, tid INT, n TEXT, b TEXT, d TEXT, pw TEXT)")
-    cur.execute("SELECT count(*) FROM classes WHERE name = %s", ("一般クラス",))
-    if cur.fetchone() == 0:
-        cur.execute("INSERT INTO classes (id, name) VALUES (%s, %s)", (1, "一般クラス"))
+    
+    # 「一般クラス」を自動作成
+    cur.execute("SELECT count(*) FROM classes WHERE id = 1")
+    if cur.fetchone()[0] == 0:
+        cur.execute("INSERT INTO classes (id, name) VALUES (1, '一般クラス')")
+    
     conn.commit(); cur.close(); conn.close()
 
+# 起動時に構造をチェック
 init_db()
 
 HTML = """
@@ -33,6 +41,8 @@ HTML = """
     <title>テキスト掲示板</title>
     <style>
         body { font-family: monospace; background-color: #eee; padding: 15px; color: #333; }
+        h1 { font-size: 1.5em; }
+        a { color: #0000ff; text-decoration: none; }
         .form-box { background: #fff; border: 1px solid #ccc; padding: 10px; margin: 10px 0; display: inline-block; width: 95%; }
         .del-btn { background: #ffcccc; border: 1px solid #f99; cursor: pointer; font-size: 0.75em; padding: 2px 4px; }
         .post { border-bottom: 1px solid #ccc; padding: 5px 0; }
@@ -44,30 +54,20 @@ HTML = """
     {% with messages = get_flashed_messages() %}{% if messages %}{% for m in messages %}<p style="color:red;">{{m}}</p>{% endfor %}{% endif %}{% endwith %}
 
     {% if v == 'menu' %}
-        {% if new_cid %}
-            <div class="id-notice">
-                【重要】新しくクラスを作成しました！<br>
-                クラスID: <span style="font-size:1.5em;">{{new_cid}}</span><br>
-                入室時に必要です。必ずメモしてください。
-            </div>
-        {% endif %}
-
+        {% if new_cid %}<div class="id-notice">【新クラスID】 {{new_cid}} (入室に必要です)</div>{% endif %}
         <h2>クラス一覧</h2>
         <ul>
         {% for cid, name in items %}
             <li style="margin-bottom:12px;">
                 <b>{{name}}</b> 
                 <form method="POST" action="/check_id/{{cid}}" style="display:inline;">
-                    {% if cid == 1 %} 
-                        <input type="submit" value="入る"> 
-                    {% else %}
-                        ID: <input type="text" name="in_id" maxlength="5" style="width:45px;" required placeholder="5桁"> 
-                        <input type="submit" value="入室"> 
-                    {% endif %}
+                    {% if cid == 1 %} <input type="submit" value="入る">
+                    {% else %} ID: <input type="text" name="in_id" maxlength="5" style="width:45px;" required> <input type="submit" value="入室">{% endif %}
                 </form>
                 {% if cid != 1 %}
-                <form method="POST" action="/del_c/{{cid}}" style="display:inline; margin-left:8px;">
-                    <input type="submit" value="クラス削除" class="del-btn" onclick="return confirm('クラスを丸ごと消去します。よろしいですか？')">
+                <form method="POST" action="/del_c/{{cid}}" style="display:inline; margin-left:10px;">
+                    <input type="password" name="pw" placeholder="pass" style="width:40px;">
+                    <input type="submit" value="クラス削除" class="del-btn" onclick="return confirm('全データが消えますがOK？')">
                 </form>
                 {% endif %}
             </li>
@@ -75,10 +75,9 @@ HTML = """
         </ul>
         <hr>
         <div class="form-box">
-            <h3>新しいクラスを追加する</h3>
+            <h3>クラスを追加する</h3>
             <form method="POST" action="/add_class">
-                クラス名: <input type="text" name="cn" placeholder="例: ひみつの部屋" required style="width:150px;"> 
-                <input type="submit" value="作成（ID自動発行）">
+                クラス名: <input type="text" name="cn" required> <input type="submit" value="作成（ID自動発行）">
             </form>
         </div>
 
@@ -99,11 +98,10 @@ HTML = """
             <li>
                 <a href="/c/{{cid}}/t/{{tid}}">{{title}}</a>
                 <form method="POST" action="/del_t/{{cid}}/{{tid}}" style="display:inline; margin-left:10px;">
-                    <input type="submit" value="削除" class="del-btn" onclick="return confirm('スレを消しますか？')">
+                    <input type="password" name="pw" placeholder="pass" style="width:40px;">
+                    <input type="submit" value="スレ削除" class="del-btn" onclick="return confirm('削除しますか？')">
                 </form>
             </li>
-        {% else %}
-            <li>まだスレッドはありません。</li>
         {% endfor %}
         </ul>
 
@@ -140,7 +138,6 @@ def index():
 @app.route('/add_class', methods=['POST'])
 def add_class():
     conn = get_db(); cur = conn.cursor()
-    # 5桁のランダムIDを発行
     new_id = random.randint(10000, 99999)
     cur.execute("INSERT INTO classes (id, name) VALUES (%s, %s)", (new_id, request.form['cn']))
     conn.commit(); cur.close(); conn.close()
@@ -158,20 +155,9 @@ def v_class(cid):
     conn = get_db(); cur = conn.cursor()
     cur.execute("SELECT name FROM classes WHERE id=%s", (cid,))
     c_res = cur.fetchone()
-    if not c_res: return redirect('/')
     cur.execute("SELECT id, title FROM threads WHERE cid=%s ORDER BY id DESC", (cid,))
     threads = cur.fetchall(); cur.close(); conn.close()
-    return render_template_string(HTML, v='class', cid=cid, cname=c_res[0], items=threads, saved_name=saved_name)
-
-@app.route('/del_c/<int:cid>', methods=['POST'])
-def del_c(cid):
-    if cid != 1:
-        conn = get_db(); cur = conn.cursor()
-        cur.execute("DELETE FROM posts WHERE tid IN (SELECT id FROM threads WHERE cid=%s)", (cid,))
-        cur.execute("DELETE FROM threads WHERE cid=%s", (cid,))
-        cur.execute("DELETE FROM classes WHERE id=%s", (cid,))
-        conn.commit(); cur.close(); conn.close()
-    return redirect('/')
+    return render_template_string(HTML, v='class', cid=cid, cname=c_res[0] if c_res else "", items=threads, saved_name=saved_name)
 
 @app.route('/c/<int:cid>/new', methods=['POST'])
 def new_t(cid):
@@ -179,7 +165,7 @@ def new_t(cid):
     conn = get_db(); cur = conn.cursor()
     cur.execute("INSERT INTO threads (cid, title) VALUES (%s, %s) RETURNING id", (cid, request.form['t']))
     tid = cur.fetchone()[0]
-    cur.execute("INSERT INTO posts (tid, n, b, d, pw) VALUES (%s, %s, %s, %s, %s)", (tid, name, request.form['b'], datetime.datetime.now().strftime('%Y-%m-%d %H:%M'), request.form.get('pw')))
+    cur.execute("INSERT INTO posts (tid, n, b, d, pw) VALUES (%s, %s, %s, %s, %s)", (tid, name, request.form['b'], datetime.datetime.now().strftime('%m/%d %H:%M'), request.form.get('pw')))
     conn.commit(); cur.close(); conn.close()
     resp = make_response(redirect(url_for('v_thread', cid=cid, tid=tid)))
     resp.set_cookie('user_name', name, max_age=60*60*24*30)
@@ -191,41 +177,54 @@ def v_thread(cid, tid):
     conn = get_db(); cur = conn.cursor()
     cur.execute("SELECT title FROM threads WHERE id=%s", (tid,))
     t_res = cur.fetchone()
-    if not t_res: return redirect(url_for('v_class', cid=cid))
     cur.execute("SELECT id, tid, n, b, d, pw FROM posts WHERE tid=%s ORDER BY id ASC", (tid,))
     posts = cur.fetchall(); cur.close(); conn.close()
-    return render_template_string(HTML, v='thread', cid=cid, tid=tid, tname=t_res[0], items=posts, r_txt=f'>>{request.args.get("r")}\\n' if request.args.get("r") else "", saved_name=saved_name)
+    r = request.args.get('r')
+    return render_template_string(HTML, v='thread', cid=cid, tid=tid, tname=t_res[0] if t_res else "", items=posts, r_txt=f'>>{r}\\n' if r else "", saved_name=saved_name)
 
 @app.route('/c/<int:cid>/t/<int:tid>/p', methods=['POST'])
 def post(cid, tid):
     name = request.form['n']
     conn = get_db(); cur = conn.cursor()
-    cur.execute("INSERT INTO posts (tid, n, b, d, pw) VALUES (%s, %s, %s, %s, %s)", (tid, name, request.form['b'], datetime.datetime.now().strftime('%Y-%m-%d %H:%M'), request.form.get('pw')))
+    cur.execute("INSERT INTO posts (tid, n, b, d, pw) VALUES (%s, %s, %s, %s, %s)", (tid, name, request.form['b'], datetime.datetime.now().strftime('%m/%d %H:%M'), request.form.get('pw')))
     conn.commit(); cur.close(); conn.close()
     resp = make_response(redirect(url_for('v_thread', cid=cid, tid=tid)))
     resp.set_cookie('user_name', name, max_age=60*60*24*30)
     return resp
-
-@app.route('/del_t/<int:cid>/<int:tid>', methods=['POST'])
-def del_t(cid, tid):
-    conn = get_db(); cur = conn.cursor()
-    cur.execute("DELETE FROM posts WHERE tid=%s", (tid,))
-    cur.execute("DELETE FROM threads WHERE id=%s", (tid,))
-    conn.commit(); cur.close(); conn.close()
-    return redirect(url_for('v_class', cid=cid))
 
 @app.route('/del_p/<int:cid>/<int:tid>/<int:pid>', methods=['POST'])
 def del_p(cid, tid, pid):
     conn = get_db(); cur = conn.cursor()
     cur.execute("SELECT pw FROM posts WHERE id=%s", (pid,))
     res = cur.fetchone()
-    if res and res[0] == request.form.get('del_pw'):
+    if res and (res[0] == request.form.get('del_pw') or request.form.get('del_pw') == ADMIN_PASS):
         cur.execute("DELETE FROM posts WHERE id=%s", (pid,))
-        conn.commit()
-    else:
-        flash("パスワードが違います。")
+        conn.commit(); flash("削除しました")
+    else: flash("パスワードが違います")
     cur.close(); conn.close()
     return redirect(url_for('v_thread', cid=cid, tid=tid))
 
+@app.route('/del_t/<int:cid>/<int:tid>', methods=['POST'])
+def del_t(cid, tid):
+    if request.form.get('pw') == ADMIN_PASS:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("DELETE FROM posts WHERE tid=%s", (tid,))
+        cur.execute("DELETE FROM threads WHERE id=%s", (tid,))
+        conn.commit(); cur.close(); conn.close()
+    else: flash("管理パスワードが違います")
+    return redirect(url_for('v_class', cid=cid))
+
+@app.route('/del_c/<int:cid>', methods=['POST'])
+def del_c(cid):
+    if cid != 1 and request.form.get('pw') == ADMIN_PASS:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("DELETE FROM posts WHERE tid IN (SELECT id FROM threads WHERE cid=%s)", (cid,))
+        cur.execute("DELETE FROM threads WHERE cid=%s", (cid,))
+        cur.execute("DELETE FROM classes WHERE id=%s", (cid,))
+        conn.commit(); cur.close(); conn.close()
+    else: flash("管理パスワードが違います")
+    return redirect('/')
+
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8000)))
+    port = int(os.environ.get('PORT', 8000))
+    app.run(host='0.0.0.0', port=port)
