@@ -5,9 +5,6 @@ import datetime
 
 app = Flask(__name__)
 
-# 管理用共通パスワード
-ADMIN_PASS = "admin123"
-
 def get_db():
     url = os.environ.get('DATABASE_URL')
     if url and url.startswith("postgresql://"):
@@ -37,7 +34,8 @@ HTML = """
         .post { margin-bottom: 10px; border-bottom: 1px solid #ccc; padding-bottom: 5px; }
         .form-box { background: #fff; border: 1px solid #ccc; padding: 10px; margin-bottom: 15px; display: inline-block; width: 95%; }
         textarea { width: 95%; height: 80px; }
-        .del-form { display: inline; font-size: 0.8em; }
+        .del-form { display: inline; margin-left: 5px; }
+        .del-btn { background: #ffcccc; border: 1px solid #f99; cursor: pointer; font-size: 0.8em; }
     </style>
 </head>
 <body>
@@ -47,14 +45,19 @@ HTML = """
         <h2>クラス一覧</h2>
         <ul>
         {% for c in items %}
-            <li><a href="/c/{{c[0]}}"><b>{{c[1]}}</b></a></li>
+            <li>
+                <a href="/c/{{c[0]}}"><b>{{c[1]}}</b></a>
+                <form method="POST" action="/del_c/{{c[0]}}" class="del-form">
+                    <input type="submit" value="クラス削除" class="del-btn" onclick="return confirm('クラスごと全消去します。よろしいですか？')">
+                </form>
+            </li>
         {% endfor %}
         </ul>
         <hr>
         <div class="form-box">
-            <h3>新規クラスの追加</h3>
+            <h3>新規クラス作成</h3>
             <form method="POST" action="/add_class">
-                クラス名: <input type="text" name="cn" required> <input type="submit" value="クラス作成">
+                クラス名: <input type="text" name="cn" required> <input type="submit" value="作成">
             </form>
         </div>
 
@@ -62,12 +65,12 @@ HTML = """
         <h2>クラス: {{cname[0]}}</h2>
         <a href="/">[戻る]</a><hr>
         <div class="form-box">
-            <h3>このクラスに新スレを立てる</h3>
+            <h3>新スレを立てる</h3>
             <form method="POST" action="/c/{{cid}}/new">
                 タイトル: <input type="text" name="t" required><br>
                 名前: <input type="text" name="n" value="名無し"><br>
                 本文:<br><textarea name="b" required></textarea><br>
-                <input type="submit" value="新規スレッド作成">
+                <input type="submit" value="スレッド作成">
             </form>
         </div><hr>
         <h3>スレッド一覧</h3>
@@ -75,9 +78,8 @@ HTML = """
         {% for t in items %}
             <li>
                 <a href="/c/{{cid}}/t/{{t[0]}}">{{t[2]}}</a>
-                <form method="POST" action="/del_t/{{cid}}/{{t[0]}}" class="del-form" style="margin-left:15px;">
-                    <input type="password" name="pw" placeholder="pass" style="width:40px;">
-                    <input type="submit" value="スレ削除" onclick="return confirm('スレッドを丸ごと消しますか？')">
+                <form method="POST" action="/del_t/{{cid}}/{{t[0]}}" class="del-form">
+                    <input type="submit" value="スレ削除" class="del-btn" onclick="return confirm('このスレッドを削除しますか？')">
                 </form>
             </li>
         {% else %}
@@ -87,13 +89,13 @@ HTML = """
 
     {% elif v == 'thread' %}
         <h2>{{tname[0]}}</h2>
-        <a href="/c/{{cid}}">[クラスへ戻る]</a><hr>
+        <a href="/c/{{cid}}">[戻る]</a><hr>
         {% for p in items %}
         <div class="post">
             {{loop.index}}: <b>{{p[2]}}</b> [{{p[4]}}] 
             <a href="?r={{loop.index}}#f">[返信]</a>
-            <form method="POST" action="/del_p/{{cid}}/{{tid}}/{{p[0]}}" class="del-form" style="margin-left:10px;">
-                <input type="password" name="pw" placeholder="pass" style="width:30px;"><input type="submit" value="消">
+            <form method="POST" action="/del_p/{{cid}}/{{tid}}/{{p[0]}}" class="del-form">
+                <input type="submit" value="消" class="del-btn" onclick="return confirm('この投稿を消しますか？')">
             </form><br>
             <div style="margin-left:20px; white-space: pre-wrap;">{{p[3]}}</div>
         </div>
@@ -108,8 +110,6 @@ HTML = """
                     <input type="submit" value="書き込む">
                 </form>
             </div>
-        {% else %}
-            <p style="color:red;"><b>500レス終了</b></p>
         {% endif %}
     {% endif %}
 </body>
@@ -127,6 +127,15 @@ def index():
 def add_class():
     conn = get_db(); cur = conn.cursor()
     cur.execute("INSERT INTO classes (name) VALUES (%s)", (request.form['cn'],))
+    conn.commit(); cur.close(); conn.close()
+    return redirect('/')
+
+@app.route('/del_c/<int:cid>', methods=['POST'])
+def del_c(cid):
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM posts WHERE tid IN (SELECT id FROM threads WHERE cid=%s)", (cid,))
+    cur.execute("DELETE FROM threads WHERE cid=%s", (cid,))
+    cur.execute("DELETE FROM classes WHERE id=%s", (cid,))
     conn.commit(); cur.close(); conn.close()
     return redirect('/')
 
@@ -170,19 +179,17 @@ def post(cid, tid):
 
 @app.route('/del_p/<int:cid>/<int:tid>/<int:pid>', methods=['POST'])
 def del_p(cid, tid, pid):
-    if request.form.get('pw') == ADMIN_PASS:
-        conn = get_db(); cur = conn.cursor()
-        cur.execute("DELETE FROM posts WHERE id=%s", (pid,))
-        conn.commit(); cur.close(); conn.close()
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM posts WHERE id=%s", (pid,))
+    conn.commit(); cur.close(); conn.close()
     return redirect(url_for('v_thread', cid=cid, tid=tid))
 
 @app.route('/del_t/<int:cid>/<int:tid>', methods=['POST'])
 def del_t(cid, tid):
-    if request.form.get('pw') == ADMIN_PASS:
-        conn = get_db(); cur = conn.cursor()
-        cur.execute("DELETE FROM posts WHERE tid=%s", (tid,))
-        cur.execute("DELETE FROM threads WHERE id=%s", (tid,))
-        conn.commit(); cur.close(); conn.close()
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM posts WHERE tid=%s", (tid,))
+    cur.execute("DELETE FROM threads WHERE id=%s", (tid,))
+    conn.commit(); cur.close(); conn.close()
     return redirect(url_for('v_class', cid=cid))
 
 if __name__ == '__main__':
