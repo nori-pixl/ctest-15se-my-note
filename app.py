@@ -19,7 +19,7 @@ def init_db():
     cur.execute("CREATE TABLE IF NOT EXISTS threads (id SERIAL PRIMARY KEY, cid INT, title TEXT)")
     cur.execute("CREATE TABLE IF NOT EXISTS posts (id SERIAL PRIMARY KEY, tid INT, n TEXT, b TEXT, d TEXT, pw TEXT)")
     cur.execute("SELECT count(*) FROM classes WHERE name = %s", ("一般クラス",))
-    if cur.fetchone()[0] == 0:
+    if cur.fetchone() == 0:
         cur.execute("INSERT INTO classes (id, name) VALUES (%s, %s)", (1, "一般クラス"))
     conn.commit(); cur.close(); conn.close()
 
@@ -34,9 +34,9 @@ HTML = """
     <style>
         body { font-family: monospace; background-color: #eee; padding: 15px; color: #333; }
         .form-box { background: #fff; border: 1px solid #ccc; padding: 10px; margin: 10px 0; display: inline-block; width: 95%; }
-        .del-btn { background: #ffcccc; border: 1px solid #f99; cursor: pointer; font-size: 0.8em; }
+        .del-btn { background: #ffcccc; border: 1px solid #f99; cursor: pointer; font-size: 0.75em; padding: 2px 4px; }
         .post { border-bottom: 1px solid #ccc; padding: 5px 0; }
-        .id-display { background: #e1f5fe; border: 2px dashed #03a9f4; padding: 10px; margin: 10px 0; color: #01579b; font-weight: bold; }
+        .id-notice { background: #fff9c4; border: 2px solid #fbc02d; padding: 10px; margin: 10px 0; font-weight: bold; color: #f57f17; }
     </style>
 </head>
 <body>
@@ -45,34 +45,40 @@ HTML = """
 
     {% if v == 'menu' %}
         {% if new_cid %}
-            <div class="id-display">
-                【重要】新しいクラスを作成しました！<br>
+            <div class="id-notice">
+                【重要】新しくクラスを作成しました！<br>
                 クラスID: <span style="font-size:1.5em;">{{new_cid}}</span><br>
-                入室時に必要ですので、必ずメモしてください。
+                入室時に必要です。必ずメモしてください。
             </div>
         {% endif %}
 
         <h2>クラス一覧</h2>
         <ul>
         {% for cid, name in items %}
-            <li style="margin-bottom:10px;">
+            <li style="margin-bottom:12px;">
                 <b>{{name}}</b> 
                 <form method="POST" action="/check_id/{{cid}}" style="display:inline;">
-                    {% if name == '一般クラス' %}
-                        <input type="submit" value="入る">
+                    {% if cid == 1 %} 
+                        <input type="submit" value="入る"> 
                     {% else %}
-                        ID入力: <input type="text" name="in_id" maxlength="5" style="width:50px;" required> <input type="submit" value="入室">
+                        ID: <input type="text" name="in_id" maxlength="5" style="width:45px;" required placeholder="5桁"> 
+                        <input type="submit" value="入室"> 
                     {% endif %}
                 </form>
+                {% if cid != 1 %}
+                <form method="POST" action="/del_c/{{cid}}" style="display:inline; margin-left:8px;">
+                    <input type="submit" value="クラス削除" class="del-btn" onclick="return confirm('クラスを丸ごと消去します。よろしいですか？')">
+                </form>
+                {% endif %}
             </li>
         {% endfor %}
         </ul>
         <hr>
         <div class="form-box">
-            <h3>新規クラス作成</h3>
+            <h3>新しいクラスを追加する</h3>
             <form method="POST" action="/add_class">
-                クラス名: <input type="text" name="cn" placeholder="例: ひみつの部屋" required> 
-                <input type="submit" value="クラスを作る（ID自動発行）">
+                クラス名: <input type="text" name="cn" placeholder="例: ひみつの部屋" required style="width:150px;"> 
+                <input type="submit" value="作成（ID自動発行）">
             </form>
         </div>
 
@@ -90,13 +96,20 @@ HTML = """
         <h3>スレッド一覧</h3>
         <ul>
         {% for tid, title in items %}
-            <li><a href="/c/{{cid}}/t/{{tid}}">{{title}}</a></li>
+            <li>
+                <a href="/c/{{cid}}/t/{{tid}}">{{title}}</a>
+                <form method="POST" action="/del_t/{{cid}}/{{tid}}" style="display:inline; margin-left:10px;">
+                    <input type="submit" value="削除" class="del-btn" onclick="return confirm('スレを消しますか？')">
+                </form>
+            </li>
+        {% else %}
+            <li>まだスレッドはありません。</li>
         {% endfor %}
         </ul>
 
     {% elif v == 'thread' %}
         <h2>{{tname}}</h2><a href="/c/{{cid}}">[戻る]</a><hr>
-        {% for pid, tid, n, b, d in items %}
+        {% for pid, tid, n, b, d, pw in items %}
         <div class="post">
             {{loop.index}}: <b>{{n}}</b> [{{d}}] <a href="?r={{loop.index}}#f">[返信]</a>
             <form method="POST" action="/del_p/{{cid}}/{{tid}}/{{pid}}" style="display:inline;">
@@ -131,21 +144,13 @@ def add_class():
     new_id = random.randint(10000, 99999)
     cur.execute("INSERT INTO classes (id, name) VALUES (%s, %s)", (new_id, request.form['cn']))
     conn.commit(); cur.close(); conn.close()
-    # 作成後にトップページへ戻り、発行されたIDを表示する
     return redirect(url_for('index', new_cid=new_id))
 
 @app.route('/check_id/<int:cid>', methods=['POST'])
 def check_id(cid):
-    if cid == 1: # 一般クラスはスルー
+    if cid == 1 or str(request.form.get('in_id')) == str(cid):
         return redirect(url_for('v_class', cid=cid))
-    
-    in_id = request.form.get('in_id')
-    # 入力されたIDがデータベースのクラスIDと一致するかチェック
-    if str(in_id) == str(cid):
-        return redirect(url_for('v_class', cid=cid))
-    else:
-        flash("クラスIDが間違っています。")
-        return redirect(url_for('index'))
+    flash("IDが間違っています。"); return redirect(url_for('index'))
 
 @app.route('/c/<int:cid>')
 def v_class(cid):
@@ -158,7 +163,16 @@ def v_class(cid):
     threads = cur.fetchall(); cur.close(); conn.close()
     return render_template_string(HTML, v='class', cid=cid, cname=c_res[0], items=threads, saved_name=saved_name)
 
-# --- 以下、スレ立て・投稿・削除のロジックは前回同様 ---
+@app.route('/del_c/<int:cid>', methods=['POST'])
+def del_c(cid):
+    if cid != 1:
+        conn = get_db(); cur = conn.cursor()
+        cur.execute("DELETE FROM posts WHERE tid IN (SELECT id FROM threads WHERE cid=%s)", (cid,))
+        cur.execute("DELETE FROM threads WHERE cid=%s", (cid,))
+        cur.execute("DELETE FROM classes WHERE id=%s", (cid,))
+        conn.commit(); cur.close(); conn.close()
+    return redirect('/')
+
 @app.route('/c/<int:cid>/new', methods=['POST'])
 def new_t(cid):
     name = request.form['n']
@@ -178,10 +192,9 @@ def v_thread(cid, tid):
     cur.execute("SELECT title FROM threads WHERE id=%s", (tid,))
     t_res = cur.fetchone()
     if not t_res: return redirect(url_for('v_class', cid=cid))
-    cur.execute("SELECT id, tid, n, b, d FROM posts WHERE tid=%s ORDER BY id ASC", (tid,))
+    cur.execute("SELECT id, tid, n, b, d, pw FROM posts WHERE tid=%s ORDER BY id ASC", (tid,))
     posts = cur.fetchall(); cur.close(); conn.close()
-    r = request.args.get('r')
-    return render_template_string(HTML, v='thread', cid=cid, tid=tid, tname=t_res[0], items=posts, r_txt=f'>>{r}\\n' if r else "", saved_name=saved_name)
+    return render_template_string(HTML, v='thread', cid=cid, tid=tid, tname=t_res[0], items=posts, r_txt=f'>>{request.args.get("r")}\\n' if request.args.get("r") else "", saved_name=saved_name)
 
 @app.route('/c/<int:cid>/t/<int:tid>/p', methods=['POST'])
 def post(cid, tid):
@@ -193,6 +206,14 @@ def post(cid, tid):
     resp.set_cookie('user_name', name, max_age=60*60*24*30)
     return resp
 
+@app.route('/del_t/<int:cid>/<int:tid>', methods=['POST'])
+def del_t(cid, tid):
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM posts WHERE tid=%s", (tid,))
+    cur.execute("DELETE FROM threads WHERE id=%s", (tid,))
+    conn.commit(); cur.close(); conn.close()
+    return redirect(url_for('v_class', cid=cid))
+
 @app.route('/del_p/<int:cid>/<int:tid>/<int:pid>', methods=['POST'])
 def del_p(cid, tid, pid):
     conn = get_db(); cur = conn.cursor()
@@ -200,8 +221,9 @@ def del_p(cid, tid, pid):
     res = cur.fetchone()
     if res and res[0] == request.form.get('del_pw'):
         cur.execute("DELETE FROM posts WHERE id=%s", (pid,))
-        conn.commit(); flash("削除しました")
-    else: flash("パスワードが違います")
+        conn.commit()
+    else:
+        flash("パスワードが違います。")
     cur.close(); conn.close()
     return redirect(url_for('v_thread', cid=cid, tid=tid))
 
