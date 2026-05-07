@@ -30,7 +30,7 @@ HTML = """
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>掲示板</title><style>body{font-family:monospace;background:#eee;padding:15px;} .box{background:#fff;border:1px solid #ccc;padding:10px;margin:10px 0; display:inline-block; width:95%;} .del-btn{background:#ffcccc;cursor:pointer;font-size:0.8em; border:1px solid #999;}</style></head>
 <body>
-    <h1><a href="/">掲示板メニュー</a></h1><hr>
+    <h1><a href="/">my-note v0.4</a></h1><hr>
     {% if v == 'menu' %}
         {% if new_cid %}<p style="color:blue;">新クラスID: <b>{{new_cid}}</b></p>{% endif %}
         <h2>クラス一覧</h2>
