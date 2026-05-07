@@ -8,28 +8,22 @@ app = Flask(__name__)
 # 管理用パスワード
 ADMIN_PASS = "admin123"
 
-# データベース接続 (Renderのpostgresql://をpostgres://に自動置換)
 def get_db():
     url = os.environ.get('DATABASE_URL')
     if url and url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgres://", 1)
     return psycopg2.connect(url, sslmode='require')
 
-# テーブル初期化
 def init_db():
-    conn = get_db()
-    cur = conn.cursor()
+    conn = get_db(); cur = conn.cursor()
     cur.execute("CREATE TABLE IF NOT EXISTS classes (id SERIAL PRIMARY KEY, name TEXT)")
     cur.execute("CREATE TABLE IF NOT EXISTS threads (id SERIAL PRIMARY KEY, cid INT, title TEXT)")
     cur.execute("CREATE TABLE IF NOT EXISTS posts (id SERIAL PRIMARY KEY, tid INT, n TEXT, b TEXT, d TEXT)")
-    conn.commit()
-    cur.close()
-    conn.close()
+    conn.commit(); cur.close(); conn.close()
 
-# 起動時にDB準備
 init_db()
 
-# HTMLテンプレート (変数名を HTML に統一)
+# 操作感を戻したHTMLテンプレート
 HTML = """
 <!DOCTYPE html>
 <html>
@@ -38,56 +32,79 @@ HTML = """
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>テキスト掲示板</title>
     <style>
-        body { font-family: sans-serif; background-color: #efefef; color: #000; padding: 15px; }
+        body { font-family: monospace; background-color: #eee; color: #333; padding: 20px; }
         h1 { font-size: 1.5em; }
         a { color: #0000ff; text-decoration: none; }
         hr { border: 0; border-top: 1px double #999; margin: 10px 0; }
-        .post { margin-bottom: 20px; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
-        .form-box { background: #fff; border: 1px solid #999; padding: 10px; display: inline-block; }
-        textarea { width: 90%; height: 100px; }
+        .post { margin-bottom: 15px; border-bottom: 1px solid #ccc; padding-bottom: 10px; }
+        .form-box { background: #fff; border: 1px solid #ccc; padding: 15px; margin-bottom: 20px; }
+        textarea { width: 300px; height: 100px; }
     </style>
 </head>
 <body>
     <h1><a href="/">掲示板メニュー</a></h1><hr>
+
     {% if v == 'menu' %}
         <h2>クラス一覧</h2>
-        <ul>{% for c in items %}<li><a href="/c/{{c[0]}}"><b>{{c[1]}}</b></a></li>{% endfor %}</ul>
-        <hr><div class="form-box">
-            <form method="POST" action="/add_class">クラス名: <input type="text" name="cn" required> <input type="submit" value="作成"></form>
-        </div>
+        <ul>
+        {% for c in items %}
+            <li><a href="/c/{{c[0]}}"><b>{{c[1]}}</b></a></li>
+        {% endfor %}
+        </ul>
+        <hr>
+        <form method="POST" action="/add_class">
+            新規クラス名: <input type="text" name="cn" required> <input type="submit" value="クラス作成">
+        </form>
+
     {% elif v == 'class' %}
-        <h2>クラス: {{cname}}</h2><p><a href="/">[戻る]</a></p><hr>
+        <h2>クラス: {{cname}}</h2>
+        <a href="/">[メニューへ戻る]</a><hr>
         <div class="form-box">
+            <h3>このクラスに新スレを立てる</h3>
             <form method="POST" action="/c/{{cid}}/new">
-                タイ: <input type="text" name="t" required> 名: <input type="text" name="n" value="名無し"><br>
-                本文:<br><textarea name="b" required></textarea><br><input type="submit" value="スレ立て">
+                タイトル: <input type="text" name="t" required><br>
+                名前: <input type="text" name="n" value="名無し"><br>
+                本文:<br><textarea name="b" required></textarea><br>
+                <input type="submit" value="新規スレッド作成">
             </form>
         </div><hr>
         <h3>スレッド一覧</h3>
-        <ul>{% for t in items %}<li><a href="/c/{{cid}}/t/{{t[0]}}">{{t[2]}}</a></li>{% endfor %}</ul>
+        <ul>
+        {% for t in items %}
+            <li><a href="/c/{{cid}}/t/{{t[0]}}">{{t[2]}}</a></li>
+        {% else %}
+            <li>まだスレッドはありません。</li>
+        {% endfor %}
+        </ul>
+
     {% elif v == 'thread' %}
-        <h2>{{tname}}</h2><p><a href="/c/{{cid}}">[戻る]</a></p><hr>
+        <h2>{{tname}}</h2>
+        <a href="/c/{{cid}}">[クラスへ戻る]</a><hr>
         {% for p in items %}
         <div class="post">
             {{loop.index}}: <b>{{p[2]}}</b> [{{p[4]}}] <a href="?r={{loop.index}}#f">[返信]</a>
-            <form method="POST" action="/del_p/{{cid}}/{{tid}}/{{p[0]}}" style="display:inline;">
-                <input type="password" name="pw" placeholder="pass" style="width:40px;"><input type="submit" value="消">
+            <form method="POST" action="/del_p/{{cid}}/{{tid}}/{{p[0]}}" style="display:inline; margin-left:10px;">
+                <input type="password" name="pw" placeholder="pass" style="width:40px;"><input type="submit" value="消" onclick="return confirm('消去しますか？')">
             </form><br>
-            <div style="margin-left:20px;">{{p[3]|replace('\\n','<br>')|safe}}</div>
+            <div style="margin-left:20px; white-space: pre-wrap;">{{p[3]|safe}}</div>
         </div>
         {% endfor %}
-        <hr>
+        
         {% if items|length < 500 %}
             <div class="form-box" id="f">
-                <h3>書込 ({{items|length}}/500)</h3>
+                <h3>書き込み (現在 {{items|length}}/500)</h3>
                 <form method="POST" action="/c/{{cid}}/t/{{tid}}/p">
-                    名: <input type="text" name="n" value="名無し"><br>
-                    本文:<br><textarea name="b" required>{{r_txt}}</textarea><br><input type="submit" value="書き込む">
+                    名前: <input type="text" name="n" value="名無し"><br>
+                    本文: <br><textarea name="b" required>{{r_txt}}</textarea><br>
+                    <input type="submit" value="書き込む">
                 </form>
             </div>
+        {% else %}
+            <p style="color:red;"><b>このスレッドは500レスに達したため終了しました。</b></p>
         {% endif %}
     {% endif %}
-</body></html>
+</body>
+</html>
 """
 
 @app.route('/')
