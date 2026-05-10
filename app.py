@@ -32,7 +32,7 @@ HTML = """
     .id-info{background:#e3f2fd; color:#1565c0; padding:5px; border-radius:3px; font-weight:bold; display:inline-block; margin-bottom:10px;}
 </style></head>
 <body>
-    <h1><a href="/">my-note掲示板</a></h1><hr>
+    <h1><a href="/">my-note掲示板 ver0.6</a></h1><hr>
 
     {% if v == 'menu' %}
         {% if new_cid %}<div class="box" style="border:2px solid #2196f3;">作成成功！このクラスのID: <b style="font-size:1.4em;">{{new_cid}}</b></div>{% endif %}
