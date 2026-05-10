@@ -2,10 +2,9 @@ import os, psycopg2, random, datetime
 from flask import Flask, render_template_string, request, redirect, url_for, make_response, flash
 
 app = Flask(__name__)
-app.secret_key = "secret_bbs_key"
+app.secret_key = "secret_bbs_full_fix"
 
 def get_db():
-    # ご提示いただいた新しいDB URLを使用
     url = "postgresql://bbs_db_9adp_user:JehILZQrfktFiwHD1si2KVZ4L7UQeyu9@dpg-d7uamctckfvc73eqppsg-a/bbs_db_9adp"
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgres://", 1)
@@ -27,10 +26,11 @@ init_db()
 HTML = """
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>秘密の掲示板</title><style>
-    body{font-family:monospace;background:#eee;padding:15px;}
+    body{font-family:monospace;background:#eee;padding:15px;color:#333;}
     .box{background:#fff;border:1px solid #ccc;padding:10px;margin:10px 0;width:95%;max-width:500px;}
     .post{border-bottom:1px solid #ccc;padding:10px 0;}
-    .del-btn{background:#ffcccc;cursor:pointer;font-size:0.8em;}
+    .del-btn{background:#ffcccc;cursor:pointer;font-size:0.75em;border:1px solid #999;}
+    hr{border:0;border-top:1px double #999;}
 </style></head>
 <body>
     <h1><a href="/">掲示板メニュー</a></h1><hr>
@@ -39,11 +39,11 @@ HTML = """
     {% if v == 'menu' %}
         <h2>表示中のクラス</h2>
         <ul>
-        {% for cid, name in items %}
+        {% for c in items %}
             <li style="margin-bottom:10px;">
-                <a href="/c/{{cid}}"><b>{{name}}</b></a>
-                {% if cid != 1 %}
-                <form method="POST" action="/remove_from_list/{{cid}}" style="display:inline;margin-left:10px;">
+                <a href="/c/{{c[0]}}"><b>{{c[1]}}</b></a>
+                {% if c[0] != 1 %}
+                <form method="POST" action="/remove_from_list/{{c[0]}}" style="display:inline;margin-left:10px;">
                     <input type="submit" value="非表示にする" style="font-size:0.7em;">
                 </form>
                 {% endif %}
@@ -52,60 +52,60 @@ HTML = """
         </ul>
         <hr>
         <div class="box">
-            <h3>知っているクラスを呼び出す</h3>
+            <h3>クラスを呼び出す</h3>
             <form method="POST" action="/find_class">
-                5桁のクラスID: <input name="fid" style="width:60px;" required> <input type="submit" value="表示に追加">
+                5桁ID: <input name="fid" style="width:60px;" required> <input type="submit" value="表示に追加">
             </form>
         </div>
         <div class="box">
-            <h3>新しいクラスを秘密で作る</h3>
+            <h3>新クラス作成</h3>
             <form method="POST" action="/add_c">
                 クラス名: <input name="cn" required><br>
-                管理パス: <input name="cpw" type="password" style="width:80px;" required placeholder="削除用"><br>
+                削除パス: <input name="cpw" type="password" style="width:80px;" required><br>
                 <input type="submit" value="作成（ID自動発行）">
             </form>
-            {% if new_cid %}<p style="color:blue;">作成成功！ID: <b>{{new_cid}}</b><br>このIDを教えた人だけが呼び出せます。</p>{% endif %}
+            {% if new_cid %}<p style="color:blue;">作成成功！ID: <b>{{new_cid}}</b></p>{% endif %}
         </div>
 
     {% elif v == 'class' %}
-        <h2>クラス: {{cname}}</h2><a href="/">[戻る]</a><hr>
+        <h2>クラス: {{cname[0]}}</h2><a href="/">[戻る]</a><hr>
         <div class="box">
-            <h3>新スレを立てる</h3>
+            <h3>新スレッド作成</h3>
             <form method="POST" action="/c/{{cid}}/new">
                 タイ: <input name="t" required> 名: <input name="n" value="{{sn}}"><br>
-                本文: <br><textarea name="b" required style="width:95%;"></textarea><br>
                 削除パス: <input name="tpw" type="password" style="width:60px;" required><br>
-                <input type="submit" value="スレッド作成">
+                本文: <br><textarea name="b" required style="width:95%;height:60px;"></textarea><br>
+                <input type="submit" value="作成">
             </form>
-        </div>
-        <hr><h3>スレッド一覧</h3>
-        <ul>{% for tid, title in items %}
+        </div><hr>
+        <h3>スレ一覧</h3>
+        <ul>{% for t in items %}
             <li style="margin-bottom:10px;">
-                <a href="/c/{{cid}}/t/{{tid}}">{{title}}</a>
-                <form method="POST" action="/del_t/{{cid}}/{{tid}}" style="display:inline;margin-left:10px;">
-                    パス: <input type="password" name="pw" style="width:40px;"> <input type="submit" value="削除" class="del-btn">
+                <a href="/c/{{cid}}/t/{{t[0]}}">{{t[2]}}</a>
+                <form method="POST" action="/del_t/{{cid}}/{{t[0]}}" style="display:inline;margin-left:10px;">
+                    パス: <input type="password" name="pw" style="width:40px;" required> <input type="submit" value="消" class="del-btn">
                 </form>
             </li>
         {% endfor %}</ul>
         <hr>
         <form method="POST" action="/del_c/{{cid}}">
-            クラスごと完全削除: パス <input type="password" name="pw" style="width:60px;"> <input type="submit" value="クラス削除" class="del-btn">
+            クラスごと削除: パス <input type="password" name="pw" style="width:60px;" required> <input type="submit" value="削除" class="del-btn">
         </form>
 
     {% elif v == 'thread' %}
-        <h2>{{tname}}</h2><a href="/c/{{cid}}">[戻る]</a><hr>
-        {% for pid, tid, n, b, d, pw in items %}
+        <h2>{{tname[0]}}</h2><a href="/c/{{cid}}">[戻る]</a><hr>
+        {% for p in items %}
             <div class="post">
-                {{loop.index}}: <b>{{n}}</b> [{{d}}] <a href="?r={{loop.index}}#f">[返信]</a>
-                <form method="POST" action="/del_p/{{cid}}/{{tid}}/{{pid}}" style="display:inline;margin-left:10px;">
-                    パス: <input type="password" name="pw" style="width:40px;"> <input type="submit" value="消" class="del-btn">
+                {{loop.index}}: <b>{{p[2]}}</b> [{{p[4]}}] <a href="?r={{loop.index}}#f">[返信]</a>
+                <form method="POST" action="/del_p/{{cid}}/{{tid}}/{{p[0]}}" style="display:inline;margin-left:10px;">
+                    パス: <input type="password" name="pw" style="width:40px;" required> <input type="submit" value="消" class="del-btn">
                 </form><br>
-                <div style="white-space:pre-wrap;margin-left:10px;">{{b}}</div>
+                <div style="white-space:pre-wrap;margin-left:10px;">{{p[3]}}</div>
             </div>
         {% endfor %}
         <div class="box" id="f">
             <form method="POST" action="/c/{{cid}}/t/{{tid}}/p">
-                名: <input name="n" value="{{sn}}"> パス: <input name="pw" type="password" style="width:50px;"><br>
+                名: <input name="n" value="{{sn}}"> パス: <input name="pw" type="password" style="width:50px;" required><br>
                 <textarea name="b" required style="width:95%;height:100px;">{{r_txt}}</textarea><br><input type="submit" value="書き込む">
             </form>
         </div>
@@ -115,12 +115,12 @@ HTML = """
 
 @app.route('/')
 def index():
-    # 表示リストをCookieから読み込む
     view_list = request.cookies.get('view_list', '1').split(',')
     items = []
     with get_db() as conn:
         with conn.cursor() as cur:
             for vid in view_list:
+                if not vid.isdigit(): continue
                 cur.execute("SELECT id, name FROM classes WHERE id=%s", (int(vid),))
                 res = cur.fetchone()
                 if res: items.append(res)
@@ -129,14 +129,14 @@ def index():
 @app.route('/find_class', methods=['POST'])
 def find_class():
     fid = request.form.get('fid')
+    if not fid.isdigit(): return redirect('/')
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM classes WHERE id=%s", (int(fid),))
             res = cur.fetchone()
     if res:
         view_list = request.cookies.get('view_list', '1').split(',')
-        if str(fid) not in view_list:
-            view_list.append(str(fid))
+        if str(fid) not in view_list: view_list.append(str(fid))
         resp = make_response(redirect('/'))
         resp.set_cookie('view_list', ','.join(view_list), max_age=60*60*24*30)
         return resp
@@ -149,20 +149,17 @@ def add_c():
         with conn.cursor() as cur:
             cur.execute("INSERT INTO classes (id, name, pw) VALUES (%s, %s, %s)", (nid, request.form['cn'], request.form['cpw']))
         conn.commit()
-    # 作成者も表示リストに追加
     view_list = request.cookies.get('view_list', '1').split(',')
     view_list.append(str(nid))
     resp = make_response(redirect(url_for('index', new_cid=nid)))
-    resp.set_cookie('view_list', ','.join(view_list), max_age=60*60*24*30)
-    return resp
+    resp.set_cookie('view_list', ','.join(view_list), max_age=60*60*24*30); return resp
 
 @app.route('/remove_from_list/<int:cid>', methods=['POST'])
 def remove_from_list(cid):
     view_list = request.cookies.get('view_list', '1').split(',')
     if str(cid) in view_list: view_list.remove(str(cid))
     resp = make_response(redirect('/'))
-    resp.set_cookie('view_list', ','.join(view_list), max_age=60*60*24*30)
-    return resp
+    resp.set_cookie('view_list', ','.join(view_list), max_age=60*60*24*30); return resp
 
 @app.route('/c/<int:cid>')
 def v_class(cid):
@@ -171,9 +168,10 @@ def v_class(cid):
         with conn.cursor() as cur:
             cur.execute("SELECT name FROM classes WHERE id=%s", (cid,))
             cn = cur.fetchone()
-            cur.execute("SELECT id, title FROM threads WHERE cid=%s ORDER BY id DESC", (cid,))
+            if not cn: return redirect('/')
+            cur.execute("SELECT * FROM threads WHERE cid=%s ORDER BY id DESC", (cid,))
             ts = cur.fetchall()
-    return render_template_string(HTML, v='class', cid=cid, cname=cn[0], items=ts, sn=sn)
+    return render_template_string(HTML, v='class', cid=cid, cname=cn, items=ts, sn=sn)
 
 @app.route('/c/<int:cid>/new', methods=['POST'])
 def new_t(cid):
@@ -193,9 +191,10 @@ def v_thread(cid, tid):
         with conn.cursor() as cur:
             cur.execute("SELECT title FROM threads WHERE id=%s", (tid,))
             tn = cur.fetchone()
-            cur.execute("SELECT id, tid, n, b, d, pw FROM posts WHERE tid=%s ORDER BY id ASC", (tid,))
+            if not tn: return redirect(url_for('v_class', cid=cid))
+            cur.execute("SELECT * FROM posts WHERE tid=%s ORDER BY id ASC", (tid,))
             ps = cur.fetchall()
-    return render_template_string(HTML, v='thread', cid=cid, tid=tid, tname=tn[0], items=ps, sn=sn, r_txt=f'>>{request.args.get("r")}\\n' if request.args.get("r") else "")
+    return render_template_string(HTML, v='thread', cid=cid, tid=tid, tname=tn, items=ps, sn=sn, r_txt=f'>>{request.args.get("r")}\\n' if request.args.get("r") else "")
 
 @app.route('/c/<int:cid>/t/<int:tid>/p', methods=['POST'])
 def post(cid, tid):
@@ -208,6 +207,7 @@ def post(cid, tid):
 
 @app.route('/del_c/<int:cid>', methods=['POST'])
 def del_c(cid):
+    if cid == 1: return redirect('/')
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT pw FROM classes WHERE id=%s", (cid,))
