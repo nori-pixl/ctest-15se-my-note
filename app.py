@@ -2,7 +2,7 @@ import os, psycopg2, random, datetime
 from flask import Flask, render_template_string, request, redirect, url_for, make_response, flash
 
 app = Flask(__name__)
-app.secret_key = "secret_bbs_final_fix"
+app.secret_key = "secret_bbs_final_stable"
 
 def get_db():
     url = "postgresql://bbs_db_9adp_user:JehILZQrfktFiwHD1si2KVZ4L7UQeyu9@dpg-d7uamctckfvc73eqppsg-a/bbs_db_9adp"
@@ -80,7 +80,7 @@ HTML = """
             <li style="margin-bottom:10px;">
                 <a href="/c/{{cid}}/t/{{tid}}">{{title}}</a>
                 <form method="POST" action="/del_t/{{cid}}/{{tid}}" style="display:inline;margin-left:10px;">
-                    <input type="password" name="pw" style="width:40px;" required> <input type="submit" value="消" class="del-btn">
+                    パス: <input type="password" name="pw" style="width:40px;" required> <input type="submit" value="消" class="del-btn">
                 </form>
             </li>
         {% endfor %}</ul>
@@ -94,7 +94,7 @@ HTML = """
             <div class="post">
                 {{loop.index}}: <b>{{n}}</b> [{{d}}] <a href="?r={{loop.index}}#f">[返信]</a>
                 <form method="POST" action="/del_p/{{cid}}/{{tid}}/{{pid}}" style="display:inline;margin-left:10px;">
-                    <input type="password" name="pw" style="width:40px;" required> <input type="submit" value="消" class="del-btn">
+                    パス: <input type="password" name="pw" style="width:40px;" required> <input type="submit" value="消" class="del-btn">
                 </form><br>
                 <div style="white-space:pre-wrap;margin-left:10px;">{{b}}</div>
             </div>
@@ -119,13 +119,13 @@ def index():
                 if not vid.isdigit(): continue
                 cur.execute("SELECT id, name FROM classes WHERE id=%s", (int(vid),))
                 res = cur.fetchone()
-                if res: items.append(res)
+                if res: items.append((res[0], res[1]))
     return render_template_string(HTML, v='menu', items=items, new_cid=request.args.get('new_cid'))
 
 @app.route('/find_class', methods=['POST'])
 def find_class():
     fid = request.form.get('fid')
-    if not fid.isdigit(): return redirect('/')
+    if not fid or not fid.isdigit(): return redirect('/')
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM classes WHERE id=%s", (int(fid),))
@@ -165,10 +165,11 @@ def v_class(cid):
             cur.execute("SELECT name FROM classes WHERE id=%s", (cid,))
             res = cur.fetchone()
             if not res: return redirect('/')
-            cname = res[0] # タプルから名前を取り出す
+            cname = res[0]
             cur.execute("SELECT id, title FROM threads WHERE cid=%s ORDER BY id DESC", (cid,))
             ts = cur.fetchall()
-    return render_template_string(HTML, v='class', cid=cid, cname=cname, items=ts, sn=sn)
+            items = [(t[0], t[1]) for t in ts] if ts else []
+    return render_template_string(HTML, v='class', cid=cid, cname=cname, items=items, sn=sn)
 
 @app.route('/c/<int:cid>/new', methods=['POST'])
 def new_t(cid):
