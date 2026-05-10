@@ -24,7 +24,7 @@ init_db()
 
 HTML = """
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>秘密の掲示板</title><style>
+<title>my-note掲示板</title><style>
     body{font-family:monospace;background:#eee;padding:15px;color:#333;}
     .box{background:#fff;border:1px solid #ccc;padding:10px;margin:10px 0;width:95%;max-width:500px;}
     .post{border-bottom:1px solid #ccc;padding:10px 0;}
@@ -32,7 +32,7 @@ HTML = """
     .id-info{background:#e3f2fd; color:#1565c0; padding:5px; border-radius:3px; font-weight:bold; display:inline-block; margin-bottom:10px;}
 </style></head>
 <body>
-    <h1><a href="/">掲示板メニュー</a></h1><hr>
+    <h1><a href="/">my-note掲示板</a></h1><hr>
 
     {% if v == 'menu' %}
         {% if new_cid %}<div class="box" style="border:2px solid #2196f3;">作成成功！このクラスのID: <b style="font-size:1.4em;">{{new_cid}}</b></div>{% endif %}
