@@ -1,14 +1,14 @@
-import os, psycopg2, random, datetime
+import os, psycopg2, psycopg2.extras, random, datetime
 from flask import Flask, render_template_string, request, redirect, url_for, make_response, flash
 
 app = Flask(__name__)
-app.secret_key = "secret_bbs_final_stable"
+app.secret_key = "final_stable_key"
 
 def get_db():
     url = "postgresql://bbs_db_9adp_user:JehILZQrfktFiwHD1si2KVZ4L7UQeyu9@dpg-d7uamctckfvc73eqppsg-a/bbs_db_9adp"
-    if url.startswith("postgresql://"):
-        url = url.replace("postgresql://", "postgres://", 1)
-    return psycopg2.connect(url, sslmode='require')
+    url = url.replace("postgresql://", "postgres://", 1)
+    # データを番号ではなく「名前」で取り出せるように設定
+    return psycopg2.connect(url, sslmode='require', cursor_factory=psycopg2.extras.DictCursor)
 
 def init_db():
     with get_db() as conn:
@@ -25,7 +25,7 @@ init_db()
 
 HTML = """
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>掲示板</title><style>
+<title>秘密の掲示板</title><style>
     body{font-family:monospace;background:#eee;padding:15px;color:#333;}
     .box{background:#fff;border:1px solid #ccc;padding:10px;margin:10px 0;width:95%;max-width:500px;}
     .post{border-bottom:1px solid #ccc;padding:10px 0;}
@@ -38,11 +38,11 @@ HTML = """
     {% if v == 'menu' %}
         <h2>表示中のクラス</h2>
         <ul>
-        {% for cid, name in items %}
+        {% for c in items %}
             <li style="margin-bottom:10px;">
-                <a href="/c/{{cid}}"><b>{{name}}</b></a>
-                {% if cid != 1 %}
-                <form method="POST" action="/remove_from_list/{{cid}}" style="display:inline;margin-left:10px;">
+                <a href="/c/{{c.id}}"><b>{{c.name}}</b></a>
+                {% if c.id != 1 %}
+                <form method="POST" action="/remove_from_list/{{c.id}}" style="display:inline;margin-left:10px;">
                     <input type="submit" value="非表示" style="font-size:0.7em;">
                 </form>
                 {% endif %}
@@ -60,7 +60,7 @@ HTML = """
             <h3>新クラス作成</h3>
             <form method="POST" action="/add_c">
                 名: <input name="cn" required><br>
-                パス: <input name="cpw" type="password" style="width:80px;" required><br>
+                削除パス: <input name="cpw" type="password" style="width:80px;" required><br>
                 <input type="submit" value="作成">
             </form>
             {% if new_cid %}<p style="color:blue;">作成成功！ID: <b>{{new_cid}}</b></p>{% endif %}
@@ -76,32 +76,33 @@ HTML = """
                 <input type="submit" value="スレッド作成">
             </form>
         </div><hr>
-        <ul>{% for tid, title in items %}
+        <h3>スレ一覧</h3>
+        <ul>{% for t in items %}
             <li style="margin-bottom:10px;">
-                <a href="/c/{{cid}}/t/{{tid}}">{{title}}</a>
-                <form method="POST" action="/del_t/{{cid}}/{{tid}}" style="display:inline;margin-left:10px;">
-                    パス: <input type="password" name="pw" style="width:40px;" required> <input type="submit" value="消" class="del-btn">
+                <a href="/c/{{cid}}/t/{{t.id}}">{{t.title}}</a>
+                <form method="POST" action="/del_t/{{cid}}/{{t.id}}" style="display:inline;margin-left:10px;">
+                    パス: <input type="password" name="pw" style="width:40px;" required> <input type="submit" value="削除" class="del-btn">
                 </form>
             </li>
         {% endfor %}</ul>
         <hr><form method="POST" action="/del_c/{{cid}}">
-            クラス削除: パス <input type="password" name="pw" style="width:60px;" required> <input type="submit" value="削除" class="del-btn">
+            クラスごと消去: パス <input type="password" name="pw" style="width:60px;" required> <input type="submit" value="削除" class="del-btn">
         </form>
 
     {% elif v == 'thread' %}
         <h2>{{tname}}</h2><a href="/c/{{cid}}">[戻る]</a><hr>
-        {% for pid, tid, n, b, d, pw in items %}
+        {% for p in items %}
             <div class="post">
-                {{loop.index}}: <b>{{n}}</b> [{{d}}] <a href="?r={{loop.index}}#f">[返信]</a>
-                <form method="POST" action="/del_p/{{cid}}/{{tid}}/{{pid}}" style="display:inline;margin-left:10px;">
+                {{loop.index}}: <b>{{p.n}}</b> [{{p.d}}] <a href="?r={{loop.index}}#f">[返信]</a>
+                <form method="POST" action="/del_p/{{cid}}/{{tid}}/{{p.id}}" style="display:inline;margin-left:10px;">
                     パス: <input type="password" name="pw" style="width:40px;" required> <input type="submit" value="消" class="del-btn">
                 </form><br>
-                <div style="white-space:pre-wrap;margin-left:10px;">{{b}}</div>
+                <div style="white-space:pre-wrap;margin-left:10px;">{{p.b}}</div>
             </div>
         {% endfor %}
         <div class="box" id="f">
             <form method="POST" action="/c/{{cid}}/t/{{tid}}/p">
-                名: <input name="n" value="{{sn}}"> パス: <input name="pw" type="password" style="width:50px;" required><br>
+                名: <input name="n" value="{{sn}}"> 削除パス: <input name="pw" type="password" style="width:50px;" required><br>
                 <textarea name="b" required style="width:95%;height:80px;">{{r_txt}}</textarea><br><input type="submit" value="書き込む">
             </form>
         </div>
@@ -111,15 +112,15 @@ HTML = """
 
 @app.route('/')
 def index():
-    view_list = request.cookies.get('view_list', '1').split(',')
+    vlist = request.cookies.get('vlist', '1').split(',')
     items = []
     with get_db() as conn:
         with conn.cursor() as cur:
-            for vid in view_list:
+            for vid in vlist:
                 if not vid.isdigit(): continue
                 cur.execute("SELECT id, name FROM classes WHERE id=%s", (int(vid),))
                 res = cur.fetchone()
-                if res: items.append((res[0], res[1]))
+                if res: items.append(res)
     return render_template_string(HTML, v='menu', items=items, new_cid=request.args.get('new_cid'))
 
 @app.route('/find_class', methods=['POST'])
@@ -129,13 +130,12 @@ def find_class():
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT id FROM classes WHERE id=%s", (int(fid),))
-            res = cur.fetchone()
-    if res:
-        view_list = request.cookies.get('view_list', '1').split(',')
-        if str(fid) not in view_list: view_list.append(str(fid))
-        resp = make_response(redirect('/'))
-        resp.set_cookie('view_list', ','.join(view_list), max_age=60*60*24*30)
-        return resp
+            if cur.fetchone():
+                vlist = request.cookies.get('vlist', '1').split(',')
+                if str(fid) not in vlist: vlist.append(str(fid))
+                resp = make_response(redirect('/'))
+                resp.set_cookie('vlist', ','.join(vlist), max_age=60*60*24*30)
+                return resp
     flash("見つかりません"); return redirect('/')
 
 @app.route('/add_c', methods=['POST'])
@@ -145,17 +145,17 @@ def add_c():
         with conn.cursor() as cur:
             cur.execute("INSERT INTO classes (id, name, pw) VALUES (%s, %s, %s)", (nid, request.form['cn'], request.form['cpw']))
         conn.commit()
-    view_list = request.cookies.get('view_list', '1').split(',')
-    view_list.append(str(nid))
+    vlist = request.cookies.get('vlist', '1').split(',')
+    vlist.append(str(nid))
     resp = make_response(redirect(url_for('index', new_cid=nid)))
-    resp.set_cookie('view_list', ','.join(view_list), max_age=60*60*24*30); return resp
+    resp.set_cookie('vlist', ','.join(vlist), max_age=60*60*24*30); return resp
 
 @app.route('/remove_from_list/<int:cid>', methods=['POST'])
 def remove_from_list(cid):
-    view_list = request.cookies.get('view_list', '1').split(',')
-    if str(cid) in view_list: view_list.remove(str(cid))
+    vlist = request.cookies.get('vlist', '1').split(',')
+    if str(cid) in vlist: vlist.remove(str(cid))
     resp = make_response(redirect('/'))
-    resp.set_cookie('view_list', ','.join(view_list), max_age=60*60*24*30); return resp
+    resp.set_cookie('vlist', ','.join(vlist), max_age=60*60*24*30); return resp
 
 @app.route('/c/<int:cid>')
 def v_class(cid):
@@ -163,13 +163,11 @@ def v_class(cid):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT name FROM classes WHERE id=%s", (cid,))
-            res = cur.fetchone()
-            if not res: return redirect('/')
-            cname = res[0]
+            row = cur.fetchone()
+            if not row: return redirect('/')
             cur.execute("SELECT id, title FROM threads WHERE cid=%s ORDER BY id DESC", (cid,))
             ts = cur.fetchall()
-            items = [(t[0], t[1]) for t in ts] if ts else []
-    return render_template_string(HTML, v='class', cid=cid, cname=cname, items=items, sn=sn)
+    return render_template_string(HTML, v='class', cid=cid, cname=row['name'], items=ts, sn=sn)
 
 @app.route('/c/<int:cid>/new', methods=['POST'])
 def new_t(cid):
@@ -188,12 +186,11 @@ def v_thread(cid, tid):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT title FROM threads WHERE id=%s", (tid,))
-            res = cur.fetchone()
-            if not res: return redirect(url_for('v_class', cid=cid))
-            tname = res[0]
-            cur.execute("SELECT id, tid, n, b, d, pw FROM posts WHERE tid=%s ORDER BY id ASC", (tid,))
+            row = cur.fetchone()
+            if not row: return redirect(url_for('v_class', cid=cid))
+            cur.execute("SELECT * FROM posts WHERE tid=%s ORDER BY id ASC", (tid,))
             ps = cur.fetchall()
-    return render_template_string(HTML, v='thread', cid=cid, tid=tid, tname=tname, items=ps, sn=sn, r_txt=f'>>{request.args.get("r")}\\n' if request.args.get("r") else "")
+    return render_template_string(HTML, v='thread', cid=cid, tid=tid, tname=row['title'], items=ps, sn=sn, r_txt=f'>>{request.args.get("r")}\\n' if request.args.get("r") else "")
 
 @app.route('/c/<int:cid>/t/<int:tid>/p', methods=['POST'])
 def post(cid, tid):
@@ -210,8 +207,8 @@ def del_c(cid):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT pw FROM classes WHERE id=%s", (cid,))
-            res = cur.fetchone()
-            if res and res[0] == request.form.get('pw'):
+            row = cur.fetchone()
+            if row and row['pw'] == request.form.get('pw'):
                 cur.execute("DELETE FROM posts WHERE tid IN (SELECT id FROM threads WHERE cid=%s)", (cid,))
                 cur.execute("DELETE FROM threads WHERE cid=%s", (cid,))
                 cur.execute("DELETE FROM classes WHERE id=%s", (cid,))
@@ -223,8 +220,8 @@ def del_t(cid, tid):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT pw FROM threads WHERE id=%s", (tid,))
-            res = cur.fetchone()
-            if res and res[0] == request.form.get('pw'):
+            row = cur.fetchone()
+            if row and row['pw'] == request.form.get('pw'):
                 cur.execute("DELETE FROM posts WHERE tid=%s", (tid,))
                 cur.execute("DELETE FROM threads WHERE id=%s", (tid,))
                 conn.commit(); return redirect(url_for('v_class', cid=cid))
@@ -235,8 +232,8 @@ def del_p(cid, tid, pid):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT pw FROM posts WHERE id=%s", (pid,))
-            res = cur.fetchone()
-            if res and res[0] == request.form.get('pw'):
+            row = cur.fetchone()
+            if row and row['pw'] == request.form.get('pw'):
                 cur.execute("DELETE FROM posts WHERE id=%s", (pid,))
                 conn.commit(); return redirect(url_for('v_thread', cid=cid, tid=tid))
     flash("パスが違います"); return redirect(url_for('v_thread', cid=cid, tid=tid))
