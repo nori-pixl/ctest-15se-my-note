@@ -2,7 +2,7 @@ import os, psycopg2, random, datetime
 from flask import Flask, render_template_string, request, redirect, url_for, make_response, flash
 
 app = Flask(__name__)
-app.secret_key = "bbs_id_display_fix"
+app.secret_key = "bbs_final_stable_fix"
 
 def get_db():
     url = "postgresql://bbs_db_9adp_user:JehILZQrfktFiwHD1si2KVZ4L7UQeyu9@dpg-d7uamctckfvc73eqppsg-a/bbs_db_9adp"
@@ -134,7 +134,7 @@ def find_class():
                 resp = make_response(redirect('/'))
                 resp.set_cookie('vlist', ','.join(vlist), max_age=60*60*24*30)
                 return resp
-    flash("見つかりません"); return redirect('/')
+    return redirect('/')
 
 @app.route('/add_c', methods=['POST'])
 def add_c():
@@ -163,16 +163,17 @@ def v_class(cid):
             cur.execute("SELECT name FROM classes WHERE id=%s", (cid,))
             row = cur.fetchone()
             if not row: return redirect('/')
+            cname = row[0]
             cur.execute("SELECT id, title FROM threads WHERE cid=%s ORDER BY id DESC", (cid,))
             ts = cur.fetchall()
-    return render_template_string(HTML, v='class', cid=cid, cname=row[1], items=ts, sn=sn)
+    return render_template_string(HTML, v='class', cid=cid, cname=cname, items=ts, sn=sn)
 
 @app.route('/c/<int:cid>/new', methods=['POST'])
 def new_t(cid):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("INSERT INTO threads (cid, title) VALUES (%s, %s) RETURNING id", (cid, request.form['t']))
-            tid = cur.fetchone()[0]
+            tid = cur.fetchone()[0] # タプルから数値を取り出す
             cur.execute("INSERT INTO posts (tid, n, b, d) VALUES (%s, %s, %s, %s)", (tid, request.form['n'], request.form['b'], datetime.datetime.now().strftime('%m/%d %H:%M')))
         conn.commit()
     resp = make_response(redirect(url_for('v_thread', cid=cid, tid=tid)))
