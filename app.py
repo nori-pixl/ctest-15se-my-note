@@ -2,16 +2,15 @@ import os, psycopg2, random, datetime
 from flask import Flask, render_template_string, request, redirect, url_for, make_response, flash
 
 app = Flask(__name__)
-app.secret_key = "bbs_final_stable_perfect_fix"
+app.secret_key = "bbs_neon_final_stable"
 
-# どんな接続URLでも確実に繋ぐための自動変換関数
 def get_db():
-    # 写真のURLをベースに、Renderの外部からでも絶対に繋がる「External用ドメイン」へ自動変換する処理を追加
-    url = "postgresql://bbs_db_9adp_user:JehILZQrfktFiwHD1si2KVZ4L7UQeyu9@://render.com"
+    # ご提示いただいたNeonのデータベースURLを設定
+    url = "postgresql://render_user:my_password123@ep-cool-snowflake-a1b2c3d4.ap-southeast-1.aws.neon.tech/render_db?sslmode=require"
     
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgres://", 1)
-    return psycopg2.connect(url, sslmode='require')
+    return psycopg2.connect(url)
 
 def init_db():
     with get_db() as conn:
@@ -28,7 +27,7 @@ init_db()
 
 HTML = """
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>掲示板</title><style>
+<title>秘密の掲示板</title><style>
     body{font-family:monospace;background:#eee;padding:15px;color:#333;}
     .box{background:#fff;border:1px solid #ccc;padding:10px;margin:10px 0;width:95%;max-width:500px;}
     .post{border-bottom:1px solid #ccc;padding:10px 0;}
