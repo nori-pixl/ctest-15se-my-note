@@ -2,11 +2,14 @@ import os, psycopg2, random, datetime
 from flask import Flask, render_template_string, request, redirect, url_for, make_response, flash
 
 app = Flask(__name__)
-app.secret_key = "bbs_final_stable_fix"
+app.secret_key = "bbs_final_stable_fix_new_db"
 
 def get_db():
+    # ご提示いただいた新しいURLを設定
     url = "postgresql://render_user:my_password123@127.0.0.1:5432/render_db"
-    url = url.replace("postgresql://", "postgres://", 1)
+    
+    if url.startswith("postgresql://"):
+        url = url.replace("postgresql://", "postgres://", 1)
     return psycopg2.connect(url, sslmode='require')
 
 def init_db():
@@ -16,7 +19,7 @@ def init_db():
             cur.execute("CREATE TABLE IF NOT EXISTS threads (id SERIAL PRIMARY KEY, cid INT, title TEXT)")
             cur.execute("CREATE TABLE IF NOT EXISTS posts (id SERIAL PRIMARY KEY, tid INT, n TEXT, b TEXT, d TEXT)")
             cur.execute("SELECT count(*) FROM classes WHERE id = 1")
-            if cur.fetchone()[0] == 0:
+            if cur.fetchone() == 0:
                 cur.execute("INSERT INTO classes (id, name) VALUES (1, '一般クラス')")
         conn.commit()
 
@@ -24,7 +27,7 @@ init_db()
 
 HTML = """
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>my-note掲示板</title><style>
+<title>秘密の掲示板</title><style>
     body{font-family:monospace;background:#eee;padding:15px;color:#333;}
     .box{background:#fff;border:1px solid #ccc;padding:10px;margin:10px 0;width:95%;max-width:500px;}
     .post{border-bottom:1px solid #ccc;padding:10px 0;}
@@ -32,7 +35,7 @@ HTML = """
     .id-info{background:#e3f2fd; color:#1565c0; padding:5px; border-radius:3px; font-weight:bold; display:inline-block; margin-bottom:10px;}
 </style></head>
 <body>
-    <h1><a href="/">my-note掲示板 ver0.6</a></h1><hr>
+    <h1><a href="/">掲示板メニュー</a></h1><hr>
 
     {% if v == 'menu' %}
         {% if new_cid %}<div class="box" style="border:2px solid #2196f3;">作成成功！このクラスのID: <b style="font-size:1.4em;">{{new_cid}}</b></div>{% endif %}
@@ -118,7 +121,7 @@ def index():
                 if not vid.isdigit(): continue
                 cur.execute("SELECT id, name FROM classes WHERE id=%s", (int(vid),))
                 res = cur.fetchone()
-                if res: items.append(res)
+                if res: items.append((res[0], res[1]))
     return render_template_string(HTML, v='menu', items=items, new_cid=request.args.get('new_cid'))
 
 @app.route('/find_class', methods=['POST'])
@@ -166,14 +169,15 @@ def v_class(cid):
             cname = row[0]
             cur.execute("SELECT id, title FROM threads WHERE cid=%s ORDER BY id DESC", (cid,))
             ts = cur.fetchall()
-    return render_template_string(HTML, v='class', cid=cid, cname=cname, items=ts, sn=sn)
+            items = [(t[0], t[1]) for t in ts] if ts else []
+    return render_template_string(HTML, v='class', cid=cid, cname=cname, items=items, sn=sn)
 
 @app.route('/c/<int:cid>/new', methods=['POST'])
 def new_t(cid):
     with get_db() as conn:
         with conn.cursor() as cur:
             cur.execute("INSERT INTO threads (cid, title) VALUES (%s, %s) RETURNING id", (cid, request.form['t']))
-            tid = cur.fetchone()[0] # タプルから数値を取り出す
+            tid = cur.fetchone()[0]
             cur.execute("INSERT INTO posts (tid, n, b, d) VALUES (%s, %s, %s, %s)", (tid, request.form['n'], request.form['b'], datetime.datetime.now().strftime('%m/%d %H:%M')))
         conn.commit()
     resp = make_response(redirect(url_for('v_thread', cid=cid, tid=tid)))
@@ -190,7 +194,8 @@ def v_thread(cid, tid):
             tn = row[0]
             cur.execute("SELECT id, tid, n, b, d FROM posts WHERE tid=%s ORDER BY id ASC", (tid,))
             ps = cur.fetchall()
-    return render_template_string(HTML, v='thread', cid=cid, tid=tid, tname=tn, items=ps, sn=sn, r_txt=f'>>{request.args.get("r")}\\n' if request.args.get("r") else "")
+            items = [(p[0], p[1], p[2], p[3], p[4]) for p in ps] if ps else []
+    return render_template_string(HTML, v='thread', cid=cid, tid=tid, tname=tn, items=items, sn=sn, r_txt=f'>>{request.args.get("r")}\\n' if request.args.get("r") else "")
 
 @app.route('/c/<int:cid>/t/<int:tid>/p', methods=['POST'])
 def post(cid, tid):
@@ -227,4 +232,5 @@ def del_p(cid, tid, pid):
         conn.commit(); return redirect(url_for('v_thread', cid=cid, tid=tid))
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8000)))
+    port = int(os.environ.get('PORT', 8000))
+    app.run(host='0.0.0.0', port=port)
