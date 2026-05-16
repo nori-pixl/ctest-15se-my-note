@@ -5,8 +5,8 @@ app = Flask(__name__)
 app.secret_key = "bbs_final_stable_fix_new_db"
 
 def get_db():
-    # ご提示いただいた新しいURLを設定
-    url = "postgresql://render_user:my_password123@127.0.0.1:5432/render_db"
+    # 発行された本物のRender用データベースURLを設定しました
+    url = "postgresql://bbs_db_9adp_user:JehILZQrfktFiwHD1si2KVZ4L7UQeyu9@dpg-cu167atckfvc73eqppsg-a/bbs_db_9adp"
     
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgres://", 1)
@@ -121,7 +121,7 @@ def index():
                 if not vid.isdigit(): continue
                 cur.execute("SELECT id, name FROM classes WHERE id=%s", (int(vid),))
                 res = cur.fetchone()
-                if res: items.append((res[0], res[1]))
+                if res: items.append(res)
     return render_template_string(HTML, v='menu', items=items, new_cid=request.args.get('new_cid'))
 
 @app.route('/find_class', methods=['POST'])
@@ -166,10 +166,10 @@ def v_class(cid):
             cur.execute("SELECT name FROM classes WHERE id=%s", (cid,))
             row = cur.fetchone()
             if not row: return redirect('/')
-            cname = row[0]
+            cname = row[1]
             cur.execute("SELECT id, title FROM threads WHERE cid=%s ORDER BY id DESC", (cid,))
             ts = cur.fetchall()
-            items = [(t[0], t[1]) for t in ts] if ts else []
+            items = [t[1] for t in ts] if ts else []
     return render_template_string(HTML, v='class', cid=cid, cname=cname, items=items, sn=sn)
 
 @app.route('/c/<int:cid>/new', methods=['POST'])
@@ -191,11 +191,10 @@ def v_thread(cid, tid):
             cur.execute("SELECT title FROM threads WHERE id=%s", (tid,))
             row = cur.fetchone()
             if not row: return redirect(url_for('v_class', cid=cid))
-            tn = row[0]
+            tn = row[1]
             cur.execute("SELECT id, tid, n, b, d FROM posts WHERE tid=%s ORDER BY id ASC", (tid,))
             ps = cur.fetchall()
-            items = [(p[0], p[1], p[2], p[3], p[4]) for p in ps] if ps else []
-    return render_template_string(HTML, v='thread', cid=cid, tid=tid, tname=tn, items=items, sn=sn, r_txt=f'>>{request.args.get("r")}\\n' if request.args.get("r") else "")
+    return render_template_string(HTML, v='thread', cid=cid, tid=tid, tname=tn, items=ps, sn=sn, r_txt=f'>>{request.args.get("r")}\\n' if request.args.get("r") else "")
 
 @app.route('/c/<int:cid>/t/<int:tid>/p', methods=['POST'])
 def post(cid, tid):
