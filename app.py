@@ -2,16 +2,19 @@ import os, psycopg2, random, datetime
 from flask import Flask, render_template_string, request, redirect, url_for, make_response, flash
 
 app = Flask(__name__)
-app.secret_key = "bbs_neon_perfect_stable_release"
+app.secret_key = "bbs_neon_final_perfect"
 
+# Renderの環境設定(Environment)からURLを安全に読み込む
 def get_db():
-    # ご提示いただいた本物のNeonデータベースURLを埋め込みました
-    url = "postgresql://neondb_owner:npg_rlJEe0PZ3jxi@ep-dry-breeze-anlvqkh0-pooler.c-6.us-east-1.aws.neon.tech/neondb?sslmode=require"
+    url = os.environ.get('DATABASE_URL')
+    if not url:
+        raise ValueError("DATABASE_URL is not set in Render Environment Variables!")
     
     if url.startswith("postgresql://"):
         url = url.replace("postgresql://", "postgres://", 1)
     return psycopg2.connect(url)
 
+# 起動時にデータベースのテーブルを自動で準備
 def init_db():
     with get_db() as conn:
         with conn.cursor() as cur:
@@ -19,7 +22,7 @@ def init_db():
             cur.execute("CREATE TABLE IF NOT EXISTS threads (id SERIAL PRIMARY KEY, cid INT, title TEXT)")
             cur.execute("CREATE TABLE IF NOT EXISTS posts (id SERIAL PRIMARY KEY, tid INT, n TEXT, b TEXT, d TEXT)")
             cur.execute("SELECT count(*) FROM classes WHERE id = 1")
-            if cur.fetchone() == 0:
+            if cur.fetchone()[0] == 0:
                 cur.execute("INSERT INTO classes (id, name) VALUES (1, '一般クラス')")
         conn.commit()
 
@@ -27,7 +30,7 @@ init_db()
 
 HTML = """
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>掲示板</title><style>
+<title>秘密の掲示板</title><style>
     body{font-family:monospace;background:#eee;padding:15px;color:#333;}
     .box{background:#fff;border:1px solid #ccc;padding:10px;margin:10px 0;width:95%;max-width:500px;}
     .post{border-bottom:1px solid #ccc;padding:10px 0;}
@@ -41,11 +44,11 @@ HTML = """
         {% if new_cid %}<div class="box" style="border:2px solid #2196f3;">作成成功！このクラスのID: <b style="font-size:1.4em;">{{new_cid}}</b></div>{% endif %}
         <h2>表示中のクラス</h2>
         <ul>
-        {% for cid, name in items %}
+        {% for c in items %}
             <li style="margin-bottom:12px;">
-                <a href="/c/{{cid}}"><b>{{name}}</b></a>
-                {% if cid != 1 %}
-                <form method="POST" action="/remove_from_list/{{cid}}" style="display:inline;margin-left:10px;">
+                <a href="/c/{{c[0]}}"><b>{{c[1]}}</b></a>
+                {% if c[0] != 1 %}
+                <form method="POST" action="/remove_from_list/{{c[0]}}" style="display:inline;margin-left:10px;">
                     <input type="submit" value="非表示" style="font-size:0.7em;">
                 </form>
                 {% endif %}
@@ -76,10 +79,10 @@ HTML = """
                 <input type="submit" value="スレッド作成">
             </form>
         </div><hr>
-        <ul>{% for tid, title in items %}
+        <ul>{% for t in items %}
             <li style="margin-bottom:10px;">
-                <a href="/c/{{cid}}/t/{{tid}}">{{title}}</a>
-                <form method="POST" action="/del_t/{{cid}}/{{tid}}" style="display:inline;">
+                <a href="/c/{{cid}}/t/{{t[0]}}">{{t[2]}}</a>
+                <form method="POST" action="/del_t/{{cid}}/{{t[0]}}" style="display:inline;">
                     <input type="submit" value="削除" class="del-btn" onclick="return confirm('消去しますか？')">
                 </form>
             </li>
@@ -91,13 +94,13 @@ HTML = """
     {% elif v == 'thread' %}
         <div class="id-info">クラスID: {{cid}}</div><br>
         <h2>{{tname}}</h2><a href="/c/{{cid}}">[戻る]</a><hr>
-        {% for pid, tid, n, b, d in items %}
+        {% for p in items %}
             <div class="post">
-                {{loop.index}}: <b>{{n}}</b> [{{d}}] <a href="?r={{loop.index}}#f">[返信]</a>
-                <form method="POST" action="/del_p/{{cid}}/{{tid}}/{{pid}}" style="display:inline;">
+                {{loop.index}}: <b>{{p[2]}}</b> [{{p[4]}}] <a href="?r={{loop.index}}#f">[返信]</a>
+                <form method="POST" action="/del_p/{{cid}}/{{tid}}/{{p[0]}}" style="display:inline;">
                     <input type="submit" value="消" class="del-btn">
                 </form><br>
-                <div style="white-space:pre-wrap;margin-left:10px;">{{b}}</div>
+                <div style="white-space:pre-wrap;margin-left:10px;">{{p[3]}}</div>
             </div>
         {% endfor %}
         <div class="box" id="f">
@@ -121,7 +124,7 @@ def index():
                 if not vid.isdigit(): continue
                 cur.execute("SELECT id, name FROM classes WHERE id=%s", (int(vid),))
                 res = cur.fetchone()
-                if res: items.append((res[0], res[1]))
+                if res: items.append(res)
     return render_template_string(HTML, v='menu', items=items, new_cid=request.args.get('new_cid'))
 
 @app.route('/find_class', methods=['POST'])
@@ -167,10 +170,9 @@ def v_class(cid):
             row = cur.fetchone()
             if not row: return redirect('/')
             cname = row[0]
-            cur.execute("SELECT id, title FROM threads WHERE cid=%s ORDER BY id DESC", (cid,))
+            cur.execute("SELECT id, cid, title FROM threads WHERE cid=%s ORDER BY id DESC", (cid,))
             ts = cur.fetchall()
-            items = [(t[0], t[1]) for t in ts] if ts else []
-    return render_template_string(HTML, v='class', cid=cid, cname=cname, items=items, sn=sn)
+    return render_template_string(HTML, v='class', cid=cid, cname=cname, items=ts, sn=sn)
 
 @app.route('/c/<int:cid>/new', methods=['POST'])
 def new_t(cid):
@@ -191,11 +193,10 @@ def v_thread(cid, tid):
             cur.execute("SELECT title FROM threads WHERE id=%s", (tid,))
             row = cur.fetchone()
             if not row: return redirect(url_for('v_class', cid=cid))
-            tn = row[0]
+            tname = row[0]
             cur.execute("SELECT id, tid, n, b, d FROM posts WHERE tid=%s ORDER BY id ASC", (tid,))
             ps = cur.fetchall()
-            items = [(p[0], p[1], p[2], p[3], p[4]) for p in ps] if ps else []
-    return render_template_string(HTML, v='thread', cid=cid, tid=tid, tname=tn, items=items, sn=sn, r_txt=f'>>{request.args.get("r")}\\n' if request.args.get("r") else "")
+    return render_template_string(HTML, v='thread', cid=cid, tid=tid, tname=tname, items=ps, sn=sn, r_txt=f'>>{request.args.get("r")}\\n' if request.args.get("r") else "")
 
 @app.route('/c/<int:cid>/t/<int:tid>/p', methods=['POST'])
 def post(cid, tid):
