@@ -5,7 +5,7 @@ app = Flask(__name__)
 app.secret_key = "bbs_final_stable_fix"
 
 def get_db():
-    url = "postgre://render_user:my_password123@127.0.0.1:5432/render_db=""
+    url = "postgresql://render_user:my_password123@127.0.0.1:5432/render_db"
     url = url.replace("postgresql://", "postgres://", 1)
     return psycopg2.connect(url, sslmode='require')
 
