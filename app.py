@@ -28,7 +28,7 @@ init_db()
 
 HTML = """
 <!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>秘密の掲示板</title><style>
+<title>掲示板</title><style>
     body{font-family:monospace;background:#eee;padding:15px;color:#333;}
     .box{background:#fff;border:1px solid #ccc;padding:10px;margin:10px 0;width:95%;max-width:500px;}
     .post{border-bottom:1px solid #ccc;padding:10px 0;}
